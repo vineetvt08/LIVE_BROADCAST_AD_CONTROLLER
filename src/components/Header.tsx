@@ -130,6 +130,12 @@ export const Header: React.FC<HeaderProps> = ({
   } else if (isMatchOver) {
     isWicketDisabled = true;
     wicketTitle = 'Match concluded.';
+  } else if (holdState === 'STATE_A') {
+    isWicketDisabled = true;
+    wicketTitle = 'No wicket is pending.';
+  } else if (holdState === 'HALF_TIME') {
+    isWicketDisabled = true;
+    wicketTitle = 'Innings completed. Half-time break is pending.';
   } else if (holdState === 'STATE_B') {
     isWicketDisabled = false;
     wicketTitle = 'Wicket fell mid-over: click to broadcast 90s Wicket Break';
@@ -137,8 +143,10 @@ export const Header: React.FC<HeaderProps> = ({
     isWicketDisabled = false;
     wicketTitle = 'Wicket on the last ball: click to broadcast 90s Wicket Break';
   } else {
-    isWicketDisabled = true;
-    wicketTitle = 'No wicket is pending.';
+    // Over is running / balls in play:
+    // Operator can click to record a wicket (+1 Wkt) and air 90s break immediately!
+    isWicketDisabled = false;
+    wicketTitle = 'Click to record a wicket (+1 Wkt) and broadcast 90s Wicket Break';
   }
 
   // 4. HALF-TIME BREAK (300s)
@@ -336,8 +344,10 @@ export const Header: React.FC<HeaderProps> = ({
             className={`px-3 py-1.5 rounded-lg text-xs font-bold border flex items-center gap-1.5 transition shadow-xs ${
               activeOneShotBreak?.type === 'WICKET'
                 ? 'bg-red-600 text-white border-red-700 shadow-sm animate-pulse'
-                : !isWicketDisabled
+                : !isWicketDisabled && (holdState === 'STATE_B' || holdState === 'STATE_C')
                 ? 'bg-red-600 text-white border-red-700 shadow-md animate-bounce'
+                : !isWicketDisabled
+                ? 'bg-red-50 text-red-700 border-red-300 hover:bg-red-100 hover:text-red-800'
                 : 'bg-white text-slate-700 border-slate-300 hover:bg-red-50 hover:text-red-700 hover:border-red-300'
             } disabled:opacity-40 disabled:cursor-not-allowed`}
             title={wicketTitle}

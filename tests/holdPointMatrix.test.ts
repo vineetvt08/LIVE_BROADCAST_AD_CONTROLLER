@@ -77,6 +77,12 @@ describe('Hold-Point Matrix & Break Button Enablement', () => {
     } else if (isMatchOver) {
       isWicketDisabled = true;
       wicketTitle = 'Match is concluded.';
+    } else if (holdState === 'STATE_A') {
+      isWicketDisabled = true;
+      wicketTitle = 'No wicket is pending.';
+    } else if (holdState === 'HALF_TIME') {
+      isWicketDisabled = true;
+      wicketTitle = 'Innings completed. Half-time break is pending.';
     } else if (holdState === 'STATE_B') {
       isWicketDisabled = false;
       wicketTitle = 'Wicket fell mid-over: click to broadcast 90s Wicket Break';
@@ -84,8 +90,8 @@ describe('Hold-Point Matrix & Break Button Enablement', () => {
       isWicketDisabled = false;
       wicketTitle = 'Wicket on the last ball: click to broadcast 90s Wicket Break';
     } else {
-      isWicketDisabled = true;
-      wicketTitle = 'No wicket is pending.';
+      isWicketDisabled = false;
+      wicketTitle = 'Click to record a wicket (+1 Wkt) and broadcast 90s Wicket Break';
     }
 
     // Half-time Break (300s)
@@ -331,6 +337,36 @@ describe('Hold-Point Matrix & Break Button Enablement', () => {
       expect(buttons.wicket.disabled).toBe(true);
       // Half-time must be enabled
       expect(buttons.halfTime.disabled).toBe(false);
+    });
+  });
+
+  describe('Mid-over while balls are in play (over is running)', () => {
+    it('enables Wicket Break so operator can trigger manual wicket and air 90s pod at any time', () => {
+      // Step 2 legal balls into an over
+      sim.reseed(42);
+      sim.stepBall(); // ball 1
+      sim.stepBall(); // ball 2
+      const state = sim.getState();
+
+      expect(state.pendingBreakHold).toBeNull();
+      expect(state.team1.ballsInOver).toBe(2);
+      const wicketsBefore = state.team1.wickets;
+
+      const buttons = getButtonStates(state);
+      expect(buttons.wicket.disabled).toBe(false);
+      expect(buttons.wicket.title).toContain('Click to record a wicket');
+
+      // Operator triggers Wicket Break mid-over
+      const breakRes = sim.triggerOperatorBreak('WICKET');
+      expect(breakRes.breakPod.breakType).toBe('Wicket_Break');
+      expect(breakRes.breakPod.targetDuration).toBe(90);
+      expect(breakRes.state.team1.wickets).toBe(wicketsBefore + 1);
+      expect(breakRes.state.status).toBe('PAUSED_AT_BREAK');
+
+      // Match resumes after break from next ball
+      const resumed = sim.resumeAfterBreak();
+      expect(resumed.status).toBe('RUNNING');
+      expect(resumed.team1.wickets).toBe(wicketsBefore + 1);
     });
   });
 });
