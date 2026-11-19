@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MatchSimulator } from '../src/engine/matchSimulator';
 import { generateAutoFillPod } from '../src/engine/autopilot/autoFillEngine';
+import { createHalfTimeShow } from '../src/engine/autopilot/halfTimeEngine';
+import { evaluatePod } from '../src/engine/rules/ruleEngine';
 import { SYNTHETIC_BRANDS } from '../src/data/syntheticBrands';
 import { OneShotBreakType, ActiveOneShotBreak, BreakResumePopup } from '../src/engine/autopilot/types';
 
@@ -105,10 +107,10 @@ describe('Hold-Point Matrix & Break Button Enablement', () => {
       halfTimeTitle = 'Match is concluded.';
     } else if (pendingHold?.type === 'HALF_TIME') {
       isHalfTimeDisabled = false;
-      halfTimeTitle = 'Innings complete: click to broadcast 300s Half-time break';
+      halfTimeTitle = 'Innings complete: click to broadcast 30-minute Half-time Show (20m ads + 10m studio talk)';
     } else {
       isHalfTimeDisabled = true;
-      halfTimeTitle = 'Half-time is available after the first innings.';
+      halfTimeTitle = 'Half-time is available after the first innings (30 mins: 20 mins ads + 10 mins studio talk).';
     }
 
     return {
@@ -367,6 +369,71 @@ describe('Hold-Point Matrix & Break Button Enablement', () => {
       const resumed = sim.resumeAfterBreak();
       expect(resumed.status).toBe('RUNNING');
       expect(resumed.team1.wickets).toBe(wicketsBefore + 1);
+    });
+  });
+
+  describe('30-Minute Broadcast Half-Time Show Architecture', () => {
+    it('builds exactly 30 minutes (1,800s) comprising 20m commercial ads (4 x 300s) and 10m studio talk (2 x 300s)', () => {
+      const show = createHalfTimeShow({
+        innings1Score: { runs: 287, wickets: 7, oversCompleted: 50, ballsInOver: 0 },
+        team1Name: 'India',
+        team2Name: 'Australia',
+        allAiredPodsInInnings: [],
+        allBrands: SYNTHETIC_BRANDS
+      });
+
+      // Total segments: 6
+      expect(show.segments.length).toBe(6);
+
+      // Verify total duration
+      const totalDuration = show.segments.reduce((sum, s) => sum + s.duration, 0);
+      expect(totalDuration).toBe(1800); // 30 minutes
+
+      // Verify ad segments count and duration
+      const adSegments = show.segments.filter(s => s.type === 'AD_POD');
+      expect(adSegments.length).toBe(4);
+      const totalAdSeconds = adSegments.reduce((sum, s) => sum + s.duration, 0);
+      expect(totalAdSeconds).toBe(1200); // 20 minutes (4 x 300s)
+
+      // Verify studio talk segments count and duration
+      const studioSegments = show.segments.filter(s => s.type === 'STUDIO_TALK');
+      expect(studioSegments.length).toBe(2);
+      const totalStudioSeconds = studioSegments.reduce((sum, s) => sum + s.duration, 0);
+      expect(totalStudioSeconds).toBe(600); // 10 minutes (2 x 300s)
+
+      // Verify alternating sequence: AD -> STUDIO -> AD -> STUDIO -> AD -> AD
+      expect(show.segments[0].type).toBe('AD_POD');
+      expect(show.segments[1].type).toBe('STUDIO_TALK');
+      expect(show.segments[2].type).toBe('AD_POD');
+      expect(show.segments[3].type).toBe('STUDIO_TALK');
+      expect(show.segments[4].type).toBe('AD_POD');
+      expect(show.segments[5].type).toBe('AD_POD');
+
+      // Verify each of the 4 commercial pods has zero BLOCK violations
+      for (const adSeg of adSegments) {
+        expect(adSeg.pod).toBeDefined();
+        const pod = adSeg.pod!;
+        const podDuration = pod.slots.reduce((sum, s) => sum + s.duration, 0);
+        expect(podDuration).toBe(300);
+
+        const evalRes = evaluatePod({
+          currentPod: pod,
+          allBrands: SYNTHETIC_BRANDS
+        });
+        const blockViolations = evalRes.slotEvaluations.flatMap(s => s.violations).filter(v => v.severity === 'BLOCK');
+        expect(blockViolations.length).toBe(0);
+      }
+
+      // Verify studio talk metadata & analysis points
+      expect(studioSegments[0].analysisPoints?.length).toBeGreaterThan(0);
+      expect(studioSegments[1].analysisPoints?.length).toBeGreaterThan(0);
+      expect(studioSegments[1].subtitle).toContain('requires 288 runs');
+
+      // Verify initialState metrics
+      expect(show.initialState.totalDurationSeconds).toBe(1800);
+      expect(show.initialState.adDurationSeconds).toBe(1200);
+      expect(show.initialState.studioDurationSeconds).toBe(600);
+      expect(show.initialState.currentSegmentIndex).toBe(1);
     });
   });
 });

@@ -4,6 +4,28 @@ export type OneShotBreakType = 'OVER' | 'WICKET' | 'STRATEGIC' | 'HALF_TIME';
 
 export type BreakButtonState = 'IDLE' | 'ACTIVE' | 'ENDED';
 
+export interface HalfTimeSegment {
+  segmentIndex: number; // 1 to 6
+  totalSegments: number; // 6
+  type: 'AD_POD' | 'STUDIO_TALK';
+  title: string;
+  subtitle: string;
+  duration: number; // in seconds (300 = 5 mins)
+  pod?: AdPod; // defined when type === 'AD_POD'
+  studioTopic?: string;
+  analysisPoints?: string[];
+}
+
+export interface HalfTimeState {
+  totalDurationSeconds: number; // 1800 (30 minutes)
+  adDurationSeconds: number; // 1200 (20 minutes)
+  studioDurationSeconds: number; // 600 (10 minutes)
+  currentSegmentIndex: number; // 1 to 6
+  currentSegmentRemainingSeconds: number;
+  segments: HalfTimeSegment[];
+  airedPodsCount: number;
+}
+
 export interface ActiveOneShotBreak {
   type: OneShotBreakType;
   status: 'ACTIVE' | 'ENDED';
@@ -12,6 +34,7 @@ export interface ActiveOneShotBreak {
   remainingSeconds: number;
   initialDuration: number;
   wasLastBallWicket?: boolean;
+  halfTimeState?: HalfTimeState;
 }
 
 export interface BreakResumePopup {

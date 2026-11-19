@@ -23,7 +23,7 @@ export const HoldBanner: React.FC<HoldBannerProps> = ({ hold, onSkipBreak }) => 
       case 'STRATEGIC':
         return { label: 'STRATEGIC TIMEOUT PENDING (300s)', color: 'bg-indigo-600 text-white' };
       case 'HALF_TIME':
-        return { label: 'HALF-TIME BREAK PENDING (300s)', color: 'bg-purple-600 text-white' };
+        return { label: 'HALF-TIME INNINGS BREAK PENDING (30m: 20m ADS + 10m STUDIO TALK)', color: 'bg-purple-600 text-white' };
     }
   };
 

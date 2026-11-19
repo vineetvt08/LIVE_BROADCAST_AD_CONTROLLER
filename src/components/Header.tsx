@@ -149,7 +149,7 @@ export const Header: React.FC<HeaderProps> = ({
     wicketTitle = 'Click to record a wicket (+1 Wkt) and broadcast 90s Wicket Break';
   }
 
-  // 4. HALF-TIME BREAK (300s)
+  // 4. HALF-TIME BREAK (30m: 20m Ads + 10m Studio Talk)
   let isHalfTimeDisabled = false;
   let halfTimeTitle = '';
   if (isBreakActive) {
@@ -163,14 +163,19 @@ export const Header: React.FC<HeaderProps> = ({
     halfTimeTitle = 'Match concluded.';
   } else if (pendingHold?.type === 'HALF_TIME') {
     isHalfTimeDisabled = false;
-    halfTimeTitle = 'Innings complete: click to broadcast 300s Half-time break';
+    halfTimeTitle = 'Innings complete: click to broadcast 30-minute Half-time Show (20m ads + 10m studio talk)';
   } else {
     isHalfTimeDisabled = true;
-    halfTimeTitle = 'Half-time is available after the first innings.';
+    halfTimeTitle = 'Half-time is available after the first innings (30 mins: 20 mins ads + 10 mins studio talk).';
   }
 
   // Format seconds countdown for active button
   const formatCountdown = (seconds: number) => {
+    if (seconds >= 60) {
+      const m = Math.floor(seconds / 60);
+      const s = Math.ceil(seconds % 60);
+      return `${m}m ${s < 10 ? '0' : ''}${s}s`;
+    }
     return `${Math.ceil(seconds)}s`;
   };
 
@@ -363,7 +368,7 @@ export const Header: React.FC<HeaderProps> = ({
             ) : null}
           </button>
 
-          {/* 3. Half-Time Break Button (300s) */}
+          {/* 3. Half-Time Break Button (30m: 20m Ads + 10m Studio Talk) */}
           <button
             type="button"
             onClick={() => onTriggerBreak('HALF_TIME')}
@@ -378,7 +383,7 @@ export const Header: React.FC<HeaderProps> = ({
             title={halfTimeTitle}
           >
             <Split className="w-3.5 h-3.5 text-purple-600" />
-            <span>Half-time (300s)</span>
+            <span>Half-time (30m)</span>
             {activeOneShotBreak?.type === 'HALF_TIME' ? (
               <span className="text-[10px] bg-purple-900 text-white px-1.5 py-0.5 rounded-full font-mono font-black animate-ping">
                 ON AIR [{formatCountdown(activeOneShotBreak.remainingSeconds)}]

@@ -22,6 +22,7 @@ import {
 } from './engine/autopilot/types';
 import { StoppageEngine } from './engine/autopilot/stoppageEngine';
 import { generateAutoFillPod } from './engine/autopilot/autoFillEngine';
+import { createHalfTimeShow } from './engine/autopilot/halfTimeEngine';
 import { SYNTHETIC_BRANDS } from './data/syntheticBrands';
 import { MixTally, INITIAL_MIX_TALLY, updateMixTally } from './engine/patternEngine';
 import { Header } from './components/Header';
@@ -102,8 +103,43 @@ export const App: React.FC = () => {
     setMatchState(res.state);
     const targetPod = res.breakPod;
 
-    const duration = type === 'OVER' ? 60 : type === 'WICKET' ? 90 : 300;
     const currentTeam = res.state.innings === 1 ? res.state.team1 : res.state.team2;
+
+    // Special Handling for 30-Minute Broadcast Half-Time Show:
+    // 20 minutes Commercial Ads (4 x 300s pods) + 10 minutes Live Studio Talk (2 x 300s segments) = 1,800s total
+    if (type === 'HALF_TIME') {
+      const halfTimeShow = createHalfTimeShow({
+        innings1Score: {
+          runs: currentTeam.score,
+          wickets: currentTeam.wickets,
+          oversCompleted: currentTeam.oversCompleted,
+          ballsInOver: currentTeam.ballsInOver
+        },
+        team1Name: currentTeam.name,
+        team2Name: res.state.innings === 1 ? 'Australia' : 'India',
+        previousPod,
+        allAiredPodsInInnings: airedPods.filter(p => p.innings === targetPod.innings),
+        allBrands: SYNTHETIC_BRANDS,
+        runningMixTally: mixTally,
+        onLogFiller: (reason) => {
+          console.warn(`[BROADCASTER FILLER]: ${reason}`);
+        }
+      });
+
+      setActiveOneShotBreak({
+        type: 'HALF_TIME',
+        status: 'ACTIVE',
+        pod: halfTimeShow.initialPod,
+        targetDuration: 1800,
+        remainingSeconds: 1800,
+        initialDuration: 1800,
+        wasLastBallWicket,
+        halfTimeState: halfTimeShow.initialState
+      });
+      return;
+    }
+
+    const duration = type === 'OVER' ? 60 : type === 'WICKET' ? 90 : 300;
 
     // Build the best zero-BLOCK pod using the pattern engine & suggestion engine with exact duration
     const filledPod = generateAutoFillPod({
@@ -196,6 +232,57 @@ export const App: React.FC = () => {
           };
         }
 
+        // Half-Time 30-Minute Show: Advance through the 6 segments (4 ad pods + 2 studio talks)
+        if (prev.type === 'HALF_TIME' && prev.halfTimeState) {
+          const ht = prev.halfTimeState;
+          const nextSegRemaining = ht.currentSegmentRemainingSeconds - decrement;
+
+          if (nextSegRemaining <= 0) {
+            const currentSeg = ht.segments[ht.currentSegmentIndex - 1];
+            // If completed segment was an ad pod, register in airedPods and mix tally
+            if (currentSeg && currentSeg.type === 'AD_POD' && currentSeg.pod) {
+              setAiredPods(ap => {
+                if (ap.some(p => p.id === currentSeg.pod!.id)) return ap;
+                return [...ap, currentSeg.pod!];
+              });
+              setPreviousPod(currentSeg.pod);
+              const durations = currentSeg.pod.slots.map(s => s.duration);
+              setMixTally(mt => updateMixTally(mt, durations));
+            }
+
+            const nextIndex = ht.currentSegmentIndex + 1;
+            if (nextIndex > ht.segments.length) {
+              return {
+                ...prev,
+                remainingSeconds: 0,
+                status: 'ENDED'
+              };
+            }
+
+            const nextSeg = ht.segments[nextIndex - 1];
+            return {
+              ...prev,
+              pod: nextSeg.pod || prev.pod,
+              remainingSeconds: nextRemaining,
+              halfTimeState: {
+                ...ht,
+                currentSegmentIndex: nextIndex,
+                currentSegmentRemainingSeconds: nextSeg.duration,
+                airedPodsCount: ht.airedPodsCount + (currentSeg?.type === 'AD_POD' ? 1 : 0)
+              }
+            };
+          }
+
+          return {
+            ...prev,
+            remainingSeconds: nextRemaining,
+            halfTimeState: {
+              ...ht,
+              currentSegmentRemainingSeconds: nextSegRemaining
+            }
+          };
+        }
+
         return {
           ...prev,
           remainingSeconds: nextRemaining
@@ -215,15 +302,31 @@ export const App: React.FC = () => {
       const finishedBreak = activeOneShotBreak;
       const finishedPod = finishedBreak.pod;
 
-      setAiredPods(prev => [...prev, finishedPod]);
-      setPreviousPod(finishedPod);
+      // Half-Time Break records its 4 individual 300s commercial pods during transitions.
+      // Record the final segment if it was an AD_POD
+      if (finishedBreak.type === 'HALF_TIME' && finishedBreak.halfTimeState) {
+        const ht = finishedBreak.halfTimeState;
+        const currentSeg = ht.segments[ht.currentSegmentIndex - 1];
+        if (currentSeg && currentSeg.type === 'AD_POD' && currentSeg.pod) {
+          setAiredPods(prev => {
+            if (prev.some(p => p.id === currentSeg.pod!.id)) return prev;
+            return [...prev, currentSeg.pod!];
+          });
+          setPreviousPod(currentSeg.pod);
+          const durations = currentSeg.pod.slots.map(s => s.duration);
+          setMixTally(prev => updateMixTally(prev, durations));
+        }
+      } else {
+        setAiredPods(prev => [...prev, finishedPod]);
+        setPreviousPod(finishedPod);
+        // Update spot duration mix tally
+        const durations = finishedPod.slots.map(s => s.duration);
+        setMixTally(prev => updateMixTally(prev, durations));
+      }
+
       setActiveOneShotBreak(null);
 
-      // Update spot duration mix tally
-      const durations = finishedPod.slots.map(s => s.duration);
-      setMixTally(prev => updateMixTally(prev, durations));
-
-      // Resume match in simulator from the exact next ball
+      // Resume match in simulator from the exact next ball (or start 2nd innings)
       const resumedState = simulatorRef.current.resumeAfterBreak();
       setMatchState(resumedState);
 
@@ -251,8 +354,8 @@ export const App: React.FC = () => {
           }
           break;
         case 'HALF_TIME':
-          popupTitle = 'Half-Time Ended';
-          popupMsg = 'Half-time has ended. Second innings begins.';
+          popupTitle = 'Half-Time Show Ended';
+          popupMsg = 'Half-time show has ended (30 mins total: 20m ads + 10m studio talk). Second innings begins.';
           break;
       }
 
@@ -440,6 +543,64 @@ export const App: React.FC = () => {
       const updated = stoppageEngineRef.current.requestResume();
       setStoppageState(updated);
     }
+  };
+
+  // Skip current Half-Time segment (advance to next studio or ad segment)
+  const handleSkipHalfTimeSegment = () => {
+    setActiveOneShotBreak(prev => {
+      if (!prev || prev.type !== 'HALF_TIME' || !prev.halfTimeState) return prev;
+      const ht = prev.halfTimeState;
+      const currentSeg = ht.segments[ht.currentSegmentIndex - 1];
+
+      // If skipping an ad pod, record it so duration tally and aired pods track it
+      if (currentSeg && currentSeg.type === 'AD_POD' && currentSeg.pod) {
+        setAiredPods(ap => {
+          if (ap.some(p => p.id === currentSeg.pod!.id)) return ap;
+          return [...ap, currentSeg.pod!];
+        });
+        setPreviousPod(currentSeg.pod);
+        const durations = currentSeg.pod.slots.map(s => s.duration);
+        setMixTally(mt => updateMixTally(mt, durations));
+      }
+
+      const nextIndex = ht.currentSegmentIndex + 1;
+      if (nextIndex > ht.segments.length) {
+        return {
+          ...prev,
+          remainingSeconds: 0,
+          status: 'ENDED'
+        };
+      }
+
+      const nextSeg = ht.segments[nextIndex - 1];
+      const newRemaining = ht.segments
+        .slice(nextIndex - 1)
+        .reduce((sum, s) => sum + s.duration, 0);
+
+      return {
+        ...prev,
+        pod: nextSeg.pod || prev.pod,
+        remainingSeconds: newRemaining,
+        halfTimeState: {
+          ...ht,
+          currentSegmentIndex: nextIndex,
+          currentSegmentRemainingSeconds: nextSeg.duration,
+          airedPodsCount: ht.airedPodsCount + (currentSeg?.type === 'AD_POD' ? 1 : 0)
+        }
+      };
+    });
+  };
+
+  // Skip entire Half-Time show to start 2nd innings immediately
+  const handleSkipHalfTimeToLive = () => {
+    setActiveOneShotBreak(prev => {
+      if (!prev || prev.type !== 'HALF_TIME') return prev;
+      return {
+        ...prev,
+        remainingSeconds: 0,
+        status: 'ENDED'
+      };
+    });
   };
 
   // Dismiss popup from queue
@@ -633,7 +794,11 @@ export const App: React.FC = () => {
 
         {/* If a One-Shot Break is Active, show the Autonomous On-Air Pod */}
         {activeOneShotBreak ? (
-          <AutonomousOnAirPod activeBreak={activeOneShotBreak} />
+          <AutonomousOnAirPod
+            activeBreak={activeOneShotBreak}
+            onSkipHalfTimeSegment={handleSkipHalfTimeSegment}
+            onSkipHalfTimeToLive={handleSkipHalfTimeToLive}
+          />
         ) : stoppageState.isActive && stoppageState.currentPod ? (
           /* Stoppage Pod View */
           <div className="bg-white rounded-2xl border border-red-200 shadow-sm p-6 space-y-4">

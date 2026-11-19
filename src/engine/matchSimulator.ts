@@ -585,10 +585,11 @@ export class MatchSimulator {
         this.state.currentNonStriker = AUSTRALIA_LINEUP[1];
         this.state.currentBowler = INDIA_LINEUP[8];
         this.state.status = 'INNINGS_BREAK';
+        // Half-Time Show: 30 minutes total (1800s) = 20 mins commercial ads (4 x 300s) + 10 mins live studio talk (2 x 300s)
         const breakPod = this.createBreakPod('Half_Time_Break_Part1', 300, 1, currentTeam.oversCompleted, false, false);
         this.state.activeBreak = breakPod;
         this.state.status = 'PAUSED_AT_BREAK';
-        this.state.commentaryLog.unshift(`HALF-TIME (300s): Operator started innings transition break.`);
+        this.state.commentaryLog.unshift(`HALF-TIME SHOW (30m total: 20m ads + 10m studio talk): Operator started innings transition.`);
         return { state: this.getState(), breakPod };
       } else {
         const breakPod = this.createBreakPod('Half_Time_Break_Part2', 300, 2, currentTeam.oversCompleted, false, false);
